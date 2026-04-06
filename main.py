@@ -76,4 +76,83 @@ elif st.session_state.role == "Teacher":
         col_a, col_b, col_c = st.columns(3)
         new_goal = col_a.number_input("Winning Score Goal:", min_value=10, max_value=1000, value=100, step=10)
         new_diff = col_b.selectbox("Difficulty Level:", ["Easy", "Medium", "Hard"], index=1)
-        new_mode = col_c.selectbox("Switch All Modes To:", ["Match Up", "Study in Groups", "Streak
+        new_mode = col_c.selectbox("Switch All Modes To:", ["Match Up", "Study in Groups", "Streak Alive"])
+        
+        if st.button("Apply Setup to All Groups", use_container_width=True):
+            for g in room["groups"].values():
+                g["goal"] = new_goal
+                g["diff"] = new_diff
+                g["mode"] = new_mode
+                # Generate first question based on difficulty
+                cf = random.randint(2, 5) if new_diff == "Easy" else random.randint(4, 12)
+                n = random.randint(1, 4) if new_diff == "Easy" else random.randint(5, 15)
+                d = random.randint(5, 10) if new_diff == "Easy" else random.randint(16, 30)
+                g["q"] = f"{n*cf}/{d*cf}"; g["a"] = str(Fraction(n, d))
+            st.success("Match configurations updated!")
+
+    st.divider()
+    cols = st.columns(4)
+    for i in range(1, GROUP_COUNT + 1):
+        g_key = f"Group {i}"
+        g = room["groups"][g_key]
+        with cols[(i-1)%4]:
+            with st.container(border=True):
+                st.subheader(g["display_name"])
+                st.caption(f"🎯 Goal: {g['goal']} | ⚖️ {g['diff']}")
+                
+                p_count = len(g["players"])
+                num_ready = sum(1 for p in g["players"].values() if p["ready"])
+                has_pep = len(g["pep_talk"].strip()) >= 3
+
+                if not g["started"]:
+                    can_start = (p_count > 0 and num_ready == p_count and g["captain"] and has_pep)
+                    if st.button(f"🚀 Launch {g_key}", key=f"btn_{g_key}", disabled=not can_start):
+                        g["started"] = True; g["start_time"] = time.time(); st.rerun()
+                else:
+                    st.success(f"In Battle: {g['mode']}")
+                    st.progress(min(g["score"] / g["goal"], 1.0) if g["mode"] == "Match Up" else 0.0)
+                    if st.button("Reset", key=f"res_{g_key}"): 
+                        g["started"] = False; g["score"] = 0; st.rerun()
+
+# --- 6. STUDENT GAMEPLAY ---
+else:
+    room = all_rooms[st.session_state.room_id]
+    if st.session_state.my_group_key is None:
+        st.header("Join a Team")
+        sc = st.columns(4)
+        for i in range(1, GROUP_COUNT + 1):
+            gk = f"Group {i}"
+            with sc[(i-1)%4]:
+                if st.button(f"{room['groups'][gk]['display_name']}\n({len(room['groups'][gk]['players'])} Players)", key=f"join_{gk}"):
+                    st.session_state.my_group_key = gk
+                    room["groups"][gk]["players"][st.session_state.user_fullname] = {"ready": False}
+                    st.rerun()
+    else:
+        g_data = room["groups"][st.session_state.my_group_key]
+        if not g_data["started"]:
+            st.header(f"Lobby: {g_data['display_name']}")
+            st.info(f"Mode: **{g_data['mode']}** | Difficulty: **{g_data['diff']}**")
+            st.write(f"Target Score: **{g_data['goal']}**")
+            
+            # Captain Logic
+            if g_data["captain"] is None:
+                if st.button("Nominate Captain"): g_data["captain"] = st.session_state.user_fullname; st.rerun()
+            elif st.session_state.user_fullname == g_data["captain"]:
+                pep = st.text_input("Pep Talk:", value=g_data["pep_talk"])
+                if st.button("Save"): g_data["pep_talk"] = pep; st.rerun()
+                if st.button("Resign"): g_data["captain"] = None; st.rerun()
+            
+            ready = g_data["players"][st.session_state.user_fullname]["ready"]
+            if st.button("✅ READY" if not ready else "⏳ NOT READY"):
+                g_data["players"][st.session_state.user_fullname]["ready"] = not ready; st.rerun()
+        else:
+            # Active Gameplay
+            st.title(f"{g_data['mode']} Mode")
+            st.write(f"Difficulty: **{g_data['diff']}**")
+            st.subheader(f"📢 {g_data['pep_talk']}")
+            
+            if g_data['mode'] == "Match Up":
+                st.write(f"### Progress: {g_data['score']} / {g_data['goal']}")
+                st.progress(min(g_data['score'] / g_data['goal'], 1.0))
+            
+            st.write("Game is live! Work with your team.")
