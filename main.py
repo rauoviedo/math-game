@@ -21,12 +21,12 @@ def get_all_rooms():
             "groups": {f"Group {i}": {
                 "display_name": f"Group {i}",
                 "captain": None,
-                "pep_talk": "", # The encouraging phrase
+                "pep_talk": "",
                 "score": 0, 
-                "players": {}, # {"Name": {"ready": bool, "joined": "timestamp"}}
+                "players": {}, 
                 "turn_idx": 0,
                 "started": False,
-                "q": "15/45", "a": "1/3",
+                "q": "10/25", "a": "2/5",
                 "start_time": time.time(),
                 "history": []
             } for i in range(1, GROUP_COUNT + 1)}
@@ -40,11 +40,11 @@ if "user_fullname" not in st.session_state: st.session_state.user_fullname = Non
 if "room_id" not in st.session_state: st.session_state.room_id = None
 if "my_group_key" not in st.session_state: st.session_state.my_group_key = None
 
-st.set_page_config(page_title="Fraction Nexus: Captain Edition", layout="wide")
+st.set_page_config(page_title="Fraction Nexus: Team Edition", layout="wide")
 
-# --- LOGIN ---
+# --- LOGIN (First & Last Name) ---
 if st.session_state.user_fullname is None:
-    st.title("🛡️ Fraction Nexus: Team Edition")
+    st.title("🛡️ Fraction Nexus: Login")
     t1, t2 = st.tabs(["Student Entry", "Teacher Admin"])
     with t1:
         s_room = st.selectbox("Class Period:", ["Select..."] + ROOM_OPTIONS)
@@ -62,14 +62,13 @@ if st.session_state.user_fullname is None:
             if t_pass == TEACHER_PASSWORD:
                 st.session_state.user_fullname = "Teacher"; st.session_state.role = "Teacher"; st.rerun()
 
-# --- TEACHER DASHBOARD (Captain Validation) ---
+# --- TEACHER DASHBOARD ---
 elif st.session_state.get("role") == "Teacher":
     st.title(f"👨‍🏫 Teacher Dashboard - {st.session_state.room_id}")
     room = all_rooms[st.session_state.room_id]
-    
     room["mode"] = st.radio("Mode:", ["Battle", "Team Fusion", "Practice"], horizontal=True)
-    st.divider()
     
+    st.divider()
     g_cols = st.columns(4)
     for i in range(1, GROUP_COUNT + 1):
         g_key = f"Group {i}"
@@ -77,29 +76,28 @@ elif st.session_state.get("role") == "Teacher":
         with g_cols[(i-1)%4]:
             with st.container(border=True):
                 st.subheader(g["display_name"])
-                st.write(f"**Captain:** {g['captain'] if g['captain'] else 'None Elected'}")
+                st.caption(f"Captain: {g['captain'] if g['captain'] else 'NONE'}")
                 
-                # START LOGIC
                 num_ready = sum(1 for p in g["players"].values() if p["ready"])
                 total = len(g["players"])
-                has_pep_talk = len(g["pep_talk"].strip()) > 3
+                has_pep = len(g["pep_talk"].strip()) >= 3
                 
-                can_start = (total > 0 and num_ready == total and g["captain"] and has_pep_talk)
+                can_start = (total > 0 and num_ready == total and g["captain"] and has_pep)
                 
                 if not g["started"]:
-                    if st.button(f"🚀 Start {g_key}", key=f"s_{g_key}", disabled=not can_start):
-                        g["started"] = True; g["start_time"] = time.time(); st.rerun()
-                    
-                    if not g["captain"]: st.caption("❌ Need a Captain")
-                    elif not has_pep_talk: st.caption("❌ Waiting for Captain's Pep Talk")
-                    elif num_ready < total: st.caption(f"⏳ {num_ready}/{total} Ready")
+                    st.button(f"🚀 Start {g_key}", key=f"s_{g_key}", disabled=not can_start, 
+                              on_click=lambda g=g: g.update({"started": True, "start_time": time.time()}))
+                    if not g["captain"]: st.error("No Captain")
+                    elif not has_pep: st.warning("Needs Pep Talk")
                 else:
-                    st.success("MATCH ACTIVE")
-                    if st.button("Stop/Reset", key=f"r_{g_key}"): g["started"] = False; st.rerun()
+                    st.success("Match Live")
+                    if st.button("Stop", key=f"stop_{g_key}"): g["started"] = False; st.rerun()
 
-# --- STUDENT GAMEPLAY (Captain Controls) ---
+# --- STUDENT GAMEPLAY ---
 else:
     room = all_rooms[st.session_state.room_id]
+    
+    # Select Team
     if st.session_state.my_group_key is None:
         st.header("Select Your Team")
         cols = st.columns(4)
@@ -115,35 +113,39 @@ else:
         is_captain = (st.session_state.user_fullname == g_data["captain"])
 
         if not g_data["started"]:
-            st.header(f"Team Lobby: {g_data['display_name']}")
+            st.header(f"Lobby: {g_data['display_name']}")
             
-            # Election Section
+            # --- CAPTAIN LOGIC ---
             if g_data["captain"] is None:
                 if st.button("🗳️ Nominate Myself as Captain", use_container_width=True):
                     g_data["captain"] = st.session_state.user_fullname
                     st.rerun()
             
-            # Captain's Pep Talk Section
-            if is_captain:
+            elif is_captain:
                 st.success("🌟 YOU ARE THE CAPTAIN")
-                pep = st.text_area("Write an encouraging phrase to your team:", value=g_data["pep_talk"], help="Must be at least 5 characters to start.")
-                if st.button("Update Pep Talk"):
+                pep = st.text_input("Encouraging Phrase:", value=g_data["pep_talk"])
+                if st.button("Save Pep Talk"):
                     g_data["pep_talk"] = pep
                     st.rerun()
-            elif g_data["captain"]:
+                
+                # THE RESIGN BUTTON
+                if st.button("❌ Never mind, I do not want to be a captain", type="secondary"):
+                    g_data["captain"] = None
+                    g_data["pep_talk"] = ""
+                    st.rerun()
+            
+            else:
                 st.info(f"Team Captain: **{g_data['captain']}**")
                 if g_data["pep_talk"]:
-                    st.write(f"📢 **Captain's Message:** _{g_data['pep_talk']}_")
-            
+                    st.write(f"📢 **Captain says:** _{g_data['pep_talk']}_")
+
             # Ready Up
-            ready = g_data["players"][st.session_state.user_fullname]["ready"]
-            if st.button("✅ READY" if not ready else "⏳ NOT READY"):
-                g_data["players"][st.session_state.user_fullname]["ready"] = not ready
+            p_data = g_data["players"][st.session_state.user_fullname]
+            if st.button("✅ READY" if not p_data["ready"] else "⏳ NOT READY"):
+                p_data["ready"] = not p_data["ready"]
                 st.rerun()
         else:
-            # Active Game
-            st.toast(f"📢 {g_data['captain']}: {g_data['pep_talk']}")
+            # Active Game (Simplified turn-based fraction logic)
+            st.info(f"💪 TEAM MOTIVATION: {g_data['pep_talk']}")
             st.title(f"Score: {g_data['score']}")
-            st.info(f"💪 PEP TALK: {g_data['pep_talk']}")
-            # ... (Rest of Game Logic)
-            st.write("Game in progress! Use 1/2 format for answers.")
+            st.write("Go team! (Use 1/2 format for fractions)")
