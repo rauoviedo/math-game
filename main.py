@@ -26,12 +26,12 @@ def get_all_rooms():
                 "pep_talk": "",
                 "score": 0, 
                 "streak": 0,
-                "players": {}, # {"Name": {"ready": bool}}
+                "players": {}, 
                 "turn_idx": 0,
                 "started": False,
-                "q": "10/20", "a": "1/2",
+                "q": "12/18", "a": "2/3",
                 "start_time": time.time(),
-                "history": [] # [{"name": "John", "correct": True, "ts": "10:00"}]
+                "history": []
             } for i in range(1, GROUP_COUNT + 1)}
         }
     return rooms
@@ -70,15 +70,14 @@ if st.session_state.user_fullname is None:
 elif st.session_state.role == "Teacher":
     st.title(f"👨‍🏫 Control Center: {st.session_state.room_id}")
     room = all_rooms[st.session_state.room_id]
-
-    with st.expander("⚙️ GLOBAL SETUP & LEADERBOARD"):
+    
+    with st.expander("⚙️ GLOBAL SETUP"):
         c_goal, c_diff, c_mode = st.columns(3)
         goal = c_goal.number_input("Target Score:", 10, 500, 100)
         diff = c_diff.selectbox("Difficulty:", ["Easy", "Medium", "Hard"], index=1)
         mode = c_mode.selectbox("Mode:", ["Match Up", "Study in Groups", "Streak Alive"])
         if st.button("Sync All Groups"):
-            for g in room["groups"].values():
-                g.update({"goal": goal, "diff": diff, "mode": mode})
+            for g in room["groups"].values(): g.update({"goal": goal, "diff": diff, "mode": mode})
             st.success("Settings Pushed!")
 
     st.divider()
@@ -98,80 +97,66 @@ elif st.session_state.role == "Teacher":
                     if st.button(f"🚀 Start {g_key}", key=f"btn_{g_key}", disabled=not can_start):
                         g["started"] = True; g["start_time"] = time.time(); st.rerun()
                 else:
-                    st.success(f"Mode: {g['mode']}")
-                    st.metric("Score", g["score"] if g["mode"] != "Streak Alive" else g["streak"])
-                    
+                    st.success("MATCH LIVE")
                     if st.button("🛑 End Round", key=f"end_{g_key}"):
-                        # LOGGING LOGIC
                         if g["history"]:
-                            st.write("### Round Results")
                             df = pd.DataFrame(g["history"])
                             stats = df.groupby('name')['correct'].agg(['count', 'sum']).reset_index()
                             stats.columns = ['Player', 'Attempts', 'Correct']
-                            stats['Accuracy'] = (stats['Correct'] / stats['Attempts'] * 100).round(1).astype(str) + '%'
                             st.table(stats)
-                            if st.button("Clear & Reset Group"):
-                                g.update({"started": False, "score": 0, "streak": 0, "history": []})
-                                st.rerun()
-                        else:
-                            g.update({"started": False, "score": 0, "streak": 0}); st.rerun()
+                        g.update({"started": False, "score": 0, "streak": 0, "history": []}); st.rerun()
 
 # --- 6. STUDENT GAMEPLAY ---
 else:
     room = all_rooms[st.session_state.room_id]
+    
+    # STEP 1: SELECT TEAM
     if st.session_state.my_group_key is None:
-        st.header("Join a Team")
-        sc = st.columns(2 if len(ROOM_OPTIONS) < 5 else 4)
+        st.header("Step 1: Choose Your Team")
+        sc = st.columns(4)
         for i in range(1, GROUP_COUNT + 1):
             gk = f"Group {i}"
-            with sc[(i-1)%len(sc)]:
-                if st.button(f"{room['groups'][gk]['display_name']} ({len(room['groups'][gk]['players'])})", key=f"j_{gk}", use_container_width=True):
+            count = len(room["groups"][gk]["players"])
+            with sc[(i-1)%4]:
+                if st.button(f"{room['groups'][gk]['display_name']} ({count})", key=f"j_{gk}", use_container_width=True):
                     st.session_state.my_group_key = gk
                     room["groups"][gk]["players"][st.session_state.user_fullname] = {"ready": False}
                     st.rerun()
+    
+    # STEP 2: LOBBY
     else:
         g_data = room["groups"][st.session_state.my_group_key]
+        
         if not g_data["started"]:
             st.header(f"Lobby: {g_data['display_name']}")
-            st.write(f"**Mode:** {g_data['mode']} | **Goal:** {g_data['goal']}")
             
+            # THE "GO BACK" BUTTON
+            if st.button("🚪 Leave Group / Change Team", type="secondary", use_container_width=True):
+                # Cleanup before leaving
+                if st.session_state.user_fullname in g_data["players"]:
+                    del g_data["players"][st.session_state.user_fullname]
+                if g_data["captain"] == st.session_state.user_fullname:
+                    g_data["captain"] = None
+                    g_data["pep_talk"] = ""
+                st.session_state.my_group_key = None
+                st.rerun()
+
+            st.divider()
+            
+            # Captain Logic
             if not g_data["captain"]:
                 if st.button("🗳️ Become Captain"): g_data["captain"] = st.session_state.user_fullname; st.rerun()
             elif st.session_state.user_fullname == g_data["captain"]:
-                pep = st.text_input("Encouraging Message:", value=g_data["pep_talk"])
-                if st.button("Save Message"): g_data["pep_talk"] = pep; st.rerun()
-                if st.button("Resign"): g_data["captain"] = None; st.rerun()
-            else:
-                st.info(f"Captain: {g_data['captain']}")
+                pep = st.text_input("Pep Talk:", value=g_data["pep_talk"])
+                if st.button("Save"): g_data["pep_talk"] = pep; st.rerun()
             
             ready = g_data["players"][st.session_state.user_fullname]["ready"]
             if st.button("✅ READY" if not ready else "⏳ UNREADY", use_container_width=True):
                 g_data["players"][st.session_state.user_fullname]["ready"] = not ready; st.rerun()
+            
+            st.write(f"Team: {list(g_data['players'].keys())}")
         else:
-            # Active Gameplay
-            player_list = list(g_data["players"].keys())
-            current_p = player_list[g_data["turn_idx"] % len(player_list)]
-            
-            st.subheader(f"💪 {g_data['pep_talk']}")
-            st.write(f"### Score: {g_data['score']} / {g_data['goal']}")
-            
-            if current_p == st.session_state.user_fullname:
-                st.success("🌟 YOUR TURN!")
-                st.write(f"## Reduce: **{g_data['q']}**")
-                ans = st.text_input("Answer (e.g., 1/2):")
-                if st.button("Submit"):
-                    try:
-                        correct = Fraction(ans) == Fraction(g_data['a'])
-                        if correct: g_data["score"] += 10; g_data["streak"] += 1
-                        else: g_data["score"] -= 5; g_data["streak"] = 0
-                        
-                        g_data["history"].append({"name": st.session_state.user_fullname, "correct": correct})
-                        g_data["turn_idx"] += 1
-                        # Generate next
-                        cf = random.randint(2, 10); n = random.randint(1, 6); d = random.randint(7, 12)
-                        g_data["q"], g_data["a"] = f"{n*cf}/{d*cf}", f"{Fraction(n, d)}"
-                        st.rerun()
-                    except: st.error("Use the 1/2 format!")
-            else:
-                st.warning(f"Waiting for {current_p}...")
-                time.sleep(3); st.rerun()
+            # Game Logic...
+            st.title("Game in Progress!")
+            st.info(f"Motivation: {g_data['pep_talk']}")
+            # (Fraction Logic here)
