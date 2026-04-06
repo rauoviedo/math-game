@@ -2,68 +2,66 @@ import streamlit as st
 import random
 from fractions import Fraction
 
-# --- CONFIGURATION & QUESTION BANK ---
-def generate_fraction():
-    """Generates a random unreduced fraction and its simplest form."""
-    common_factor = random.randint(2, 10)
-    num = random.randint(1, 12)
-    den = random.randint(num + 1, 15) # Ensure it's a proper fraction
+# --- SHARED CLASSROOM DATA ---
+@st.cache_resource
+def get_global_state():
+    return {
+        "scores": {"Alpha": 0, "Beta": 0},
+        "turn": "Alpha",
+        "q": "6/8",
+        "a": "3/4"
+    }
+
+state = get_global_state()
+
+# --- STUDENT SESSION (Individual Device) ---
+if "my_team" not in st.session_state:
+    st.session_state.my_team = None
+
+st.title("🛡️ Fraction Team Battle")
+
+# STEP 1: JOIN A TEAM
+if st.session_state.my_team is None:
+    st.subheader("Welcome! Choose your side:")
+    col_a, col_b = st.columns(2)
+    if col_a.button("Join Team Alpha"):
+        st.session_state.my_team = "Alpha"
+        st.rerun()
+    if col_b.button("Join Team Beta"):
+        st.session_state.my_team = "Beta"
+        st.rerun()
+
+# STEP 2: THE GAME
+else:
+    # Scoreboard (Visible to all)
+    c1, c2 = st.columns(2)
+    c1.metric("Team Alpha", f"{state['scores']['Alpha']} pts")
+    c2.metric("Team Beta", f"{state['scores']['Beta']} pts")
     
-    unreduced = f"{num * common_factor}/{den * common_factor}"
-    reduced = str(Fraction(num, den)) # Simplest form
-    return unreduced, reduced
-
-# --- PERSISTENT GAME STATE ---
-# In a basic Streamlit app, session_state is per-user. 
-# For a true "shared" classroom experience, you would connect to a database.
-if "scores" not in st.session_state:
-    st.session_state.scores = {"Team Alpha": 0, "Team Beta": 0}
-    st.session_state.turn = "Team Alpha"
-    st.session_state.q, st.session_state.a = generate_fraction()
-
-# --- USER INTERFACE ---
-st.set_page_config(page_title="Fraction Face-Off", page_icon="🔢")
-st.title("🔢 Fraction Face-Off")
-st.write("Reduce the fraction to its simplest form. **Wrong answers lose points!**")
-
-# Scoreboard
-col1, col2 = st.columns(2)
-col1.metric("Team Alpha", f"{st.session_state.scores['Team Alpha']} pts")
-col2.metric("Team Beta", f"{st.session_state.scores['Team Beta']} pts")
-
-st.divider()
-
-# Game Area
-st.subheader(f"Current Turn: :blue[{st.session_state.turn}]")
-st.info(f"### Reduce this:  **{st.session_state.q}**")
-
-# Input
-answer = st.text_input("Your answer (e.g., 1/2):", key="ans_input")
-
-if st.button("Submit Answer"):
-    if not answer:
-        st.warning("Please enter an answer first!")
-    else:
-        try:
-            # Check answer
-            user_val = Fraction(answer)
-            correct_val = Fraction(st.session_state.a)
-            
-            if user_val == correct_val:
-                st.balloons()
-                st.success(f"CORRECT! +10 points for {st.session_state.turn}")
-                st.session_state.scores[st.session_state.turn] += 10
+    st.divider()
+    st.write(f"You are on **Team {st.session_state.my_team}**")
+    
+    # Logic: Only show input if it's your team's turn
+    if state["turn"] == st.session_state.my_team:
+        st.info(f"### IT IS YOUR TURN! \n## Reduce: **{state['q']}**")
+        ans = st.text_input("Enter simplest form (e.g. 1/2):")
+        
+        if st.button("Submit for my Team"):
+            if ans == state["a"]:
+                state["scores"][st.session_state.my_team] += 10
+                st.toast("Correct! +10 Points", icon="✅")
             else:
-                st.error(f"WRONG! The answer was {st.session_state.a}. -5 points.")
-                st.session_state.scores[st.session_state.turn] -= 5
+                state["scores"][st.session_state.my_team] -= 5
+                st.toast("Wrong! -5 Points", icon="❌")
             
-            # Switch Turn
-            st.session_state.turn = "Team Beta" if st.session_state.turn == "Team Alpha" else "Team Alpha"
-            # Get New Question
-            st.session_state.q, st.session_state.a = generate_fraction()
-            
-            # Refresh to update UI
+            # Switch turn and generate new Q
+            state["turn"] = "Beta" if state["turn"] == "Alpha" else "Alpha"
+            cf = random.randint(2, 6)
+            n, d = random.randint(1, 4), random.randint(5, 10)
+            state["q"] = f"{n*cf}/{d*cf}"
+            state["a"] = str(Fraction(n, d))
             st.rerun()
-            
-        except ValueError:
-            st.error("Invalid format! Please use a '/' (e.g., 2/3)")
+    else:
+        st.warning(f"Wait! It is Team {state['turn']}'s turn. Watch the scores!")
+        if st.button("Refresh Scoreboard"):
+            st.rerun()
