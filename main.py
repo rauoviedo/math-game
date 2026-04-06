@@ -2,157 +2,151 @@ import streamlit as st
 import random
 from fractions import Fraction
 
-# --- 1. DEFINE YOUR ROOMS HERE ---
-# You can change these names to match your actual class periods
-ROOM_OPTIONS = ["Select a Room", "Period 1", "Period 2", "Period 3", "Period 4", "After School Club"]
+# --- 1. SETTINGS ---
+TEACHER_PASSWORD = "mathrocks2026"  # Change this to your preferred password
+ROOM_OPTIONS = ["Period 1", "Period 2", "Period 3", "Period 4", "Test Room"]
 
-# --- 2. MULTI-ROOM SHARED DATA ---
+# --- 2. SHARED DATA ---
 @st.cache_resource
 def get_all_rooms():
-    return {}
-
-all_rooms = get_all_rooms()
-
-def initialize_room(room_id):
-    if room_id not in all_rooms:
-        all_rooms[room_id] = {
+    # Initialize all rooms immediately
+    rooms = {}
+    for r in ROOM_OPTIONS:
+        rooms[r] = {
             "scores": {"Alpha": 0, "Beta": 0},
             "players": {"Alpha": [], "Beta": []},
             "history": [],
             "game_started": False,
             "turn": "Alpha",
-            "q": "15/20",
-            "a": "3/4"
+            "q": "10/15",
+            "a": "2/3"
         }
-    return all_rooms[room_id]
+    return rooms
 
-# --- 3. INDIVIDUAL STUDENT SESSION ---
+all_rooms = get_all_rooms()
+
+# --- 3. SESSION STATE ---
 if "user_name" not in st.session_state:
     st.session_state.user_name = None
-if "my_team" not in st.session_state:
-    st.session_state.my_team = None
+if "role" not in st.session_state:
+    st.session_state.role = "Student"
 if "room_id" not in st.session_state:
     st.session_state.room_id = None
-if "is_teacher" not in st.session_state:
-    st.session_state.is_teacher = False
+if "my_team" not in st.session_state:
+    st.session_state.my_team = None
 
-st.set_page_config(page_title="Fraction Battle Royale", layout="centered")
-st.title("🛡️ Fraction Team Battle")
+st.set_page_config(page_title="Math Battle: Teacher Edition", layout="wide")
 
-# STEP 1: LOGIN & ROOM SELECTION
+# --- STEP 1: LOGIN SCREEN ---
 if st.session_state.user_name is None:
-    st.subheader("📝 Join Your Class")
+    st.title("🛡️ Fraction Battle Royale")
     
-    # Dropdown for Rooms
-    selected_room = st.selectbox("Which class are you in?", ROOM_OPTIONS)
+    tab1, tab2 = st.tabs(["Student Join", "Teacher Login"])
     
-    first = st.text_input("First Name")
-    last = st.text_input("Last Name")
-    
-    # Hidden Teacher Access (Type 'Admin' in Last Name to be the teacher)
-    is_teacher_check = st.checkbox("I am the teacher")
-    
-    if st.button("Enter Lobby"):
-        if selected_room != "Select a Room" and first and last:
-            st.session_state.room_id = selected_room
-            st.session_state.user_name = f"{first} {last}"
-            st.session_state.is_teacher = is_teacher_check
-            initialize_room(selected_room)
-            st.rerun()
-        else:
-            st.error("Please select a room and enter your full name!")
-
-else:
-    # Connect to the specific room's data
-    room = all_rooms[st.session_state.room_id]
-
-    # STEP 2: TEAM SELECTION
-    if st.session_state.my_team is None:
-        st.subheader(f"Class: {st.session_state.room_id}")
-        st.write(f"Hello {st.session_state.user_name}, pick a team:")
-        c_a, c_b = st.columns(2)
-        if c_a.button("Join Team Alpha"):
-            st.session_state.my_team = "Alpha"
-            if st.session_state.user_name not in room["players"]["Alpha"]:
-                room["players"]["Alpha"].append(st.session_state.user_name)
-            st.rerun()
-        if c_b.button("Join Team Beta"):
-            st.session_state.my_team = "Beta"
-            if st.session_state.user_name not in room["players"]["Beta"]:
-                room["players"]["Beta"].append(st.session_state.user_name)
-            st.rerun()
-
-    # STEP 3: THE WAITING ROOM
-    elif not room["game_started"]:
-        st.header(f"⏳ {st.session_state.room_id} Lobby")
-        st.write("---")
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.subheader("🚩 Team Alpha")
-            for p in room["players"]["Alpha"]:
-                st.write(f"• {p}")
-        with col_b:
-            st.subheader("🚩 Team Beta")
-            for p in room["players"]["Beta"]:
-                st.write(f"• {p}")
-        
-        st.write("---")
-        
-        # Only the "Teacher" session sees the Start button
-        if st.session_state.is_teacher:
-            if st.button("🚀 START THE MATCH"):
-                room["game_started"] = True
+    with tab1:
+        s_room = st.selectbox("Select your Class:", ["Select..."] + ROOM_OPTIONS)
+        s_first = st.text_input("First Name")
+        s_last = st.text_input("Last Name")
+        if st.button("Join as Student"):
+            if s_room != "Select..." and s_first and s_last:
+                st.session_state.room_id = s_room
+                st.session_state.user_name = f"{s_first} {s_last}"
+                st.session_state.role = "Student"
                 st.rerun()
-        else:
-            st.info("Waiting for your teacher to start the game...")
-            if st.button("🔄 Refresh Roster"):
+            else:
+                st.error("Please fill in all student details.")
+
+    with tab2:
+        st.subheader("Teacher Access")
+        t_pass = st.text_input("Teacher Password", type="password")
+        if st.button("Login to Dashboard"):
+            if t_pass == TEACHER_PASSWORD:
+                st.session_state.user_name = "Teacher"
+                st.session_state.role = "Teacher"
                 st.rerun()
+            else:
+                st.error("Incorrect Password")
 
-    # STEP 4: ACTIVE GAMEPLAY
-    else:
-        st.subheader(f"Room: {st.session_state.room_id}")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Alpha", f"{room['scores']['Alpha']} pts")
-        c2.metric("Beta", f"{room['scores']['Beta']} pts")
-        c3.write(f"**Your Team:** \n{st.session_state.my_team}")
-
-        st.divider()
-
-        if room["turn"] == st.session_state.my_team:
-            st.success(f"🌟 YOUR TURN, {st.session_state.user_name}!")
-            st.write(f"### Reduce this:  **{room['q']}**")
-            ans = st.text_input("Enter simplest form:", key="play_input")
+# --- STEP 2: TEACHER DASHBOARD ---
+elif st.session_state.role == "Teacher":
+    st.title("👨‍🏫 Teacher Command Center")
+    st.write("Monitor and start your classes from here.")
+    
+    cols = st.columns(len(ROOM_OPTIONS))
+    
+    for i, r_name in enumerate(ROOM_OPTIONS):
+        with cols[i]:
+            room = all_rooms[r_name]
+            st.subheader(r_name)
+            st.write(f"👥 Alpha: {len(room['players']['Alpha'])}")
+            st.write(f"👥 Beta: {len(room['players']['Beta'])}")
             
+            if not room["game_started"]:
+                if st.button(f"Start {r_name}", key=f"start_{r_name}"):
+                    room["game_started"] = True
+                    st.success(f"{r_name} Started!")
+            else:
+                st.write(f"🏆 Score: {room['scores']['Alpha']} - {room['scores']['Beta']}")
+                if st.button(f"Reset {r_name}", key=f"reset_{r_name}"):
+                    room["game_started"] = False
+                    room["scores"] = {"Alpha": 0, "Beta": 0}
+                    room["players"] = {"Alpha": [], "Beta": []}
+                    st.rerun()
+    
+    if st.button("Logout"):
+        st.session_state.user_name = None
+        st.rerun()
+
+# --- STEP 3: STUDENT GAMEPLAY ---
+else:
+    room = all_rooms[st.session_state.room_id]
+    
+    # Student Team Choice
+    if st.session_state.my_team is None:
+        st.header(f"Welcome to {st.session_state.room_id}")
+        c1, c2 = st.columns(2)
+        if c1.button("Join Alpha"):
+            st.session_state.my_team = "Alpha"
+            room["players"]["Alpha"].append(st.session_state.user_name)
+            st.rerun()
+        if c2.button("Join Beta"):
+            st.session_state.my_team = "Beta"
+            room["players"]["Beta"].append(st.session_state.user_name)
+            st.rerun()
+
+    # Waiting Room
+    elif not room["game_started"]:
+        st.header("⏳ Waiting for Teacher...")
+        st.write(f"You are on **Team {st.session_state.my_team}**.")
+        st.write("The match will begin once your teacher hits 'Start' on their dashboard.")
+        st.button("🔄 Refresh")
+
+    # The Actual Game
+    else:
+        st.header(f"Class: {st.session_state.room_id}")
+        sc1, sc2 = st.columns(2)
+        sc1.metric("Alpha", room["scores"]["Alpha"])
+        sc2.metric("Beta", room["scores"]["Beta"])
+        
+        st.divider()
+        
+        if room["turn"] == st.session_state.my_team:
+            st.success(f"🌟 {st.session_state.user_name}, it is your turn!")
+            st.write(f"## Reduce: **{room['q']}**")
+            ans = st.text_input("Answer:")
             if st.button("Submit"):
                 try:
                     if Fraction(ans) == Fraction(room["a"]):
                         room["scores"][st.session_state.my_team] += 10
-                        msg = f"✅ {st.session_state.user_name} (Team {st.session_state.my_team}) got it!"
                     else:
                         room["scores"][st.session_state.my_team] -= 5
-                        msg = f"❌ {st.session_state.user_name} (Team {st.session_state.my_team}) missed."
                     
-                    room["history"].append(msg)
                     room["turn"] = "Beta" if room["turn"] == "Alpha" else "Alpha"
-                    
-                    # New Question Generation
-                    cf = random.randint(2, 10)
-                    n, d = random.randint(1, 5), random.randint(6, 12)
-                    room["q"] = f"{n*cf}/{d*cf}"
-                    room["a"] = str(Fraction(n, d))
+                    # New Q
+                    cf = random.randint(2, 10); n = random.randint(1, 5); d = random.randint(6, 12)
+                    room["q"] = f"{n*cf}/{d*cf}"; room["a"] = str(Fraction(n, d))
                     st.rerun()
-                except:
-                    st.error("Please enter a valid fraction (e.g. 1/2)")
+                except: st.error("Use 1/2 format")
         else:
-            st.warning(f"⏳ **Next up to continue the series: Team {room['turn']}**")
-            st.button("🔄 Refresh Scoreboard")
-                
-        st.sidebar.header("Class History")
-        for event in reversed(room["history"]):
-            st.sidebar.write(event)
-            
-        if st.sidebar.button("🚪 Leave Room"):
-            st.session_state.my_team = None
-            st.session_state.user_name = None
-            st.rerun()
+            st.warning(f"Waiting for Team {room['turn']}...")
+            st.button("Refresh")
