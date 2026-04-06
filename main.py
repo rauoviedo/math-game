@@ -18,7 +18,9 @@ def get_all_rooms():
             "session_active": True,
             "groups": {f"Group {i}": {
                 "display_name": f"Group {i}",
-                "mode": "Match Up", # Mode is now tracked PER GROUP
+                "mode": "Match Up",
+                "goal": 100,      # TEACHER SETS THIS
+                "diff": "Medium", # TEACHER SETS THIS
                 "captain": None,
                 "pep_talk": "",
                 "score": 0, 
@@ -26,7 +28,7 @@ def get_all_rooms():
                 "players": {}, 
                 "turn_idx": 0,
                 "started": False,
-                "q": "15/20", "a": "3/4",
+                "q": "10/20", "a": "1/2",
                 "start_time": time.time(),
                 "history": []
             } for i in range(1, GROUP_COUNT + 1)}
@@ -41,7 +43,7 @@ if "role" not in st.session_state: st.session_state.role = "Student"
 if "room_id" not in st.session_state: st.session_state.room_id = None
 if "my_group_key" not in st.session_state: st.session_state.my_group_key = None
 
-st.set_page_config(page_title="Fraction Nexus: Multi-Mode", layout="wide")
+st.set_page_config(page_title="Fraction Nexus: Teacher Setup", layout="wide")
 
 # --- 4. LOGIN ---
 if st.session_state.user_fullname is None:
@@ -63,80 +65,15 @@ if st.session_state.user_fullname is None:
                 if not st.session_state.room_id: st.session_state.room_id = "Period 1"
                 st.rerun()
 
-# --- 5. TEACHER DASHBOARD (Per-Group Mode) ---
+# --- 5. TEACHER DASHBOARD (Match Setup) ---
 elif st.session_state.role == "Teacher":
-    st.title(f"👨‍🏫 Dashboard: {st.session_state.room_id}")
+    st.title(f"👨‍🏫 Match Setup: {st.session_state.room_id}")
     room = all_rooms[st.session_state.room_id]
 
-    # Global Override
-    with st.expander("🌐 Global Mode Override (Change All Groups)"):
-        g_mode = st.radio("Set ALL groups to:", ["Match Up", "Study in Groups", "Streak Alive"], horizontal=True)
-        if st.button("Apply to All"):
-            for g in room["groups"].values(): g["mode"] = g_mode
-            st.rerun()
-
-    st.divider()
-    cols = st.columns(4)
-    for i in range(1, GROUP_COUNT + 1):
-        g_key = f"Group {i}"
-        g = room["groups"][g_key]
-        with cols[(i-1)%4]:
-            with st.container(border=True):
-                st.subheader(g["display_name"])
-                
-                # --- NEW: INDIVIDUAL MODE SELECTOR ---
-                g["mode"] = st.selectbox(f"Mode for {g_key}:", 
-                                        ["Match Up", "Study in Groups", "Streak Alive"], 
-                                        index=["Match Up", "Study in Groups", "Streak Alive"].index(g["mode"]),
-                                        key=f"mode_sel_{g_key}")
-                
-                p_count = len(g["players"])
-                num_ready = sum(1 for p in g["players"].values() if p["ready"])
-                has_pep = len(g["pep_talk"].strip()) >= 3
-
-                if not g["started"]:
-                    can_start = (p_count > 0 and num_ready == p_count and g["captain"] and has_pep)
-                    if st.button(f"🚀 Start {g_key}", key=f"btn_{g_key}", disabled=not can_start):
-                        g["started"] = True; g["start_time"] = time.time(); st.rerun()
-                    st.caption(f"Ready: {num_ready}/{p_count} | Capt: {'✅' if g['captain'] else '❌'}")
-                else:
-                    st.success(f"Running: {g['mode']}")
-                    st.write(f"Score/Streak: {g['score'] if g['mode'] != 'Streak Alive' else g['streak']}")
-                    if st.button("Reset", key=f"res_{g_key}"): g["started"] = False; g["score"] = 0; g["streak"] = 0; st.rerun()
-
-# --- 6. STUDENT GAMEPLAY ---
-else:
-    room = all_rooms[st.session_state.room_id]
-    if st.session_state.my_group_key is None:
-        st.header("Join a Team")
-        sc = st.columns(4)
-        for i in range(1, GROUP_COUNT + 1):
-            gk = f"Group {i}"
-            with sc[(i-1)%4]:
-                if st.button(f"{room['groups'][gk]['display_name']}\n({len(room['groups'][gk]['players'])} Players)", key=f"join_{gk}"):
-                    st.session_state.my_group_key = gk
-                    room["groups"][gk]["players"][st.session_state.user_fullname] = {"ready": False}
-                    st.rerun()
-    else:
-        g_data = room["groups"][st.session_state.my_group_key]
-        if not g_data["started"]:
-            st.header(f"Lobby: {g_data['display_name']}")
-            st.info(f"Your Assigned Mode: **{g_data['mode']}**")
-            
-            # Captain/Ready Logic (Same as before)
-            if g_data["captain"] is None:
-                if st.button("Nominate Captain"): g_data["captain"] = st.session_state.user_fullname; st.rerun()
-            elif st.session_state.user_fullname == g_data["captain"]:
-                pep = st.text_input("Pep Talk:", value=g_data["pep_talk"])
-                if st.button("Save"): g_data["pep_talk"] = pep; st.rerun()
-                if st.button("Resign"): g_data["captain"] = None; st.rerun()
-            
-            ready = g_data["players"][st.session_state.user_fullname]["ready"]
-            if st.button("✅ READY" if not ready else "⏳ NOT READY"):
-                g_data["players"][st.session_state.user_fullname]["ready"] = not ready; st.rerun()
-        else:
-            # Active Gameplay using g_data['mode']
-            st.title(f"Mode: {g_data['mode']}")
-            st.subheader(f"📢 {g_data['pep_talk']}")
-            # ... Fraction Logic handles scoring based on g_data['mode'] ...
-            st.write("Game in progress!")
+    # Global Match Setup Panel
+    with st.expander("⚙️ GLOBAL MATCH SETUP (Configure all groups)", expanded=True):
+        st.write("Set the parameters for the next 'Match Up' battle:")
+        col_a, col_b, col_c = st.columns(3)
+        new_goal = col_a.number_input("Winning Score Goal:", min_value=10, max_value=1000, value=100, step=10)
+        new_diff = col_b.selectbox("Difficulty Level:", ["Easy", "Medium", "Hard"], index=1)
+        new_mode = col_c.selectbox("Switch All Modes To:", ["Match Up", "Study in Groups", "Streak
