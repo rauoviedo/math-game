@@ -76,4 +76,111 @@ elif st.session_state.role == "Teacher":
     
     st.divider()
     g_cols = st.columns(4)
-    for i in range(1, GROUP_COUNT +
+    for i in range(1, GROUP_COUNT + 1):
+        g_key = f"Group {i}"
+        g = room["groups"][g_key]
+        with g_cols[(i-1)%4]:
+            with st.container(border=True):
+                st.subheader(g["display_name"])
+                st.progress(min(g["score"] / WINNING_SCORE, 1.0))
+                st.write(f"**Score:** {g['score']}/{WINNING_SCORE}")
+                
+                if not g["started"]:
+                    if st.button(f"🚀 Start {g_key}", key=f"s_{g_key}"):
+                        g["started"] = True
+                        g["start_time"] = time.time()
+                        st.rerun()
+                
+                # Kick players / Show Roster
+                for p in g["players"]:
+                    c1, c2 = st.columns([3, 1])
+                    c1.write(p)
+                    if c2.button("❌", key=f"k_{p}_{g_key}"):
+                        g["players"].remove(p)
+                        st.rerun()
+
+# --- STUDENT GAMEPLAY ---
+else:
+    room = all_rooms[st.session_state.room_id]
+    
+    # 1. Join a Group
+    if st.session_state.my_group_key is None:
+        st.header("Pick Your Group")
+        cols = st.columns(4)
+        for i in range(1, GROUP_COUNT + 1):
+            g_key = f"Group {i}"
+            g_disp = room["groups"][g_key]["display_name"]
+            with cols[(i-1)%4]:
+                if st.button(f"Join {g_disp}", key=f"j_{g_key}", use_container_width=True):
+                    st.session_state.my_group_key = g_key
+                    if room["groups"][g_key]["leader"] is None:
+                        room["groups"][g_key]["leader"] = st.session_state.user_name
+                    room["groups"][g_key]["players"].append(st.session_state.user_name)
+                    st.rerun()
+
+    # 2. Main Game Logic
+    else:
+        g_data = room["groups"][st.session_state.my_group_key]
+        
+        # Winner Check
+        if g_data["score"] >= WINNING_SCORE:
+            st.balloons()
+            st.title(f"🏆 {g_data['display_name']} WINS!")
+            st.header(f"Final Score: {g_data['score']}")
+            st.stop()
+
+        if not g_data["started"]:
+            st.header(f"Waiting Area: {g_data['display_name']}")
+            if st.session_state.user_name == g_data["leader"]:
+                new_n = st.text_input("Edit Group Name:", value=g_data["display_name"])
+                if st.button("Save Name"): 
+                    g_data["display_name"] = new_n
+                    st.rerun()
+            st.info("The teacher will start the match shortly.")
+            st.write(f"Group Members: {', '.join(g_data['players'])}")
+            st.button("Refresh")
+        else:
+            # Active Turn
+            current_player = g_data["players"][g_data["turn_idx"] % len(g_data["players"])]
+            elapsed = int(time.time() - g_data["start_time"])
+            
+            game_col, hist_col = st.columns([2, 1])
+            
+            with game_col:
+                st.subheader(f"Group: {g_data['display_name']}")
+                st.progress(min(g_data["score"] / WINNING_SCORE, 1.0))
+                st.write(f"Points: **{g_data['score']} / {WINNING_SCORE}**")
+                
+                if current_player == st.session_state.user_name:
+                    st.success("✨ IT IS YOUR TURN!")
+                    st.write(f"## Simplify: **{g_data['q']}**")
+                    ans = st.text_input("Enter fraction (e.g. 1/2):")
+                    
+                    if st.button("Submit Answer", use_container_width=True):
+                        try:
+                            if Fraction(ans) == Fraction(g_data['a']):
+                                pts = 15 if (room["timer_enabled"] and elapsed < 10) else 10
+                                g_data['score'] += pts
+                                g_data["history"].append({"name": st.session_state.user_name, "correct": True, "time": elapsed})
+                            else:
+                                g_data['score'] -= 5
+                                g_data["history"].append({"name": st.session_state.user_name, "correct": False, "time": elapsed})
+                            
+                            g_data['turn_idx'] += 1
+                            g_data["start_time"] = time.time()
+                            cf = random.randint(2, 9); n = random.randint(1, 5); d = random.randint(6, 12)
+                            g_data["q"] = f"{n*cf}/{d*cf}"; g_data["a"] = str(Fraction(n, d))
+                            st.rerun()
+                        except: st.error("Please use the 1/2 format.")
+                else:
+                    st.warning(f"Waiting for {current_player}...")
+                    if room["timer_enabled"]: st.write(f"Current Timer: {elapsed}s")
+                    time.sleep(1)
+                    st.rerun()
+
+            with hist_col:
+                st.subheader("📜 Group History")
+                for entry in reversed(g_data["history"]):
+                    icon = "✅" if entry["correct"] else "❌"
+                    color = "green" if entry["correct"] else "red"
+                    st.markdown(f"**{entry['name']}** {icon} ({entry['time']}s)")
